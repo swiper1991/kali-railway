@@ -5,8 +5,7 @@ RDP_USER="${RDP_USER:-kali}"
 RDP_PASSWORD="${RDP_PASSWORD:?RDP_PASSWORD belum diatur}"
 RDP_PORT="${RDP_PORT:-3389}"
 
-echo "[INIT] Preparing Kali Linux RDP environment..."
-echo "[INIT] User: $RDP_USER | Port: $RDP_PORT"
+echo "[INIT] Starting Kali RDP..."
 
 # 1. Create user
 if ! id "$RDP_USER" >/dev/null 2>&1; then
@@ -17,40 +16,37 @@ usermod -aG sudo "$RDP_USER"
 usermod -aG ssl-cert "$RDP_USER" 2>/dev/null || true
 adduser xrdp ssl-cert 2>/dev/null || true
 
-# 2. Home dir
 HOME_DIR="$(eval echo ~"$RDP_USER")"
 mkdir -p "$HOME_DIR"
 chown "$RDP_USER:$RDP_USER" "$HOME_DIR"
 
-# 3. Prepare dirs
-rm -rf /var/run/xrdp /run/xrdp /tmp/.X11-unix /tmp/.xrdp 2>/dev/null || true
-mkdir -p /var/run/dbus /var/run/xrdp/sockdir /var/log/xrdp /tmp/runtime-kali
-chown -R xrdp:xrdp /var/run/xrdp
-chmod 777 /var/run/xrdp /var/run/xrdp/sockdir
+# 2. BUNUH PROSES NYANGKUT & BERSIHIN LOCK (INI KUNCI UTAMANYA)
+pkill -9 xrdp 2>/dev/null || true
+pkill -9 xrdp-sesman 2>/dev/null || true
+pkill -9 Xorg 2>/dev/null || true
+rm -rf /run/xrdp/sockdir/sesman.socket* 2>/dev/null || true
+rm -rf /tmp/.X11-unix/* 2>/dev/null || true
+rm -rf /tmp/.xrdp/* 2>/dev/null || true
 
-# 4. Fix Xorg
+# 3. Prepare dirs & permissions
+mkdir -p /var/run/dbus /run/xrdp/sockdir /var/log/xrdp /tmp/runtime-kali
+chown -R xrdp:xrdp /run/xrdp
+chmod 777 /run/xrdp /run/xrdp/sockdir
+chown "$RDP_USER:$RDP_USER" /tmp/runtime-kali
+chmod 700 /tmp/runtime-kali
+
+# 4. Fix Xorg wrapper
 cat > /etc/X11/Xwrapper.config <<EOF
 allowed_users=anybody
 needs_root_rights=no
 EOF
 
-# 5. CEK XORGXRDP (INI PENTING)
-if ! dpkg -l | grep -q xorgxrdp; then
-    echo "[FIX] Installing xorgxrdp..."
-    apt-get update && apt-get install -y xorgxrdp
-fi
-
-if [ ! -f /usr/lib/xorg/Xorg ]; then
-    echo "[FATAL] Xorg binary not found at /usr/lib/xorg/Xorg"
-    exit 1
-fi
-
-# 6. DBus
+# 5. Start DBus
 if [ ! -S /var/run/dbus/system_bus_socket ]; then
     dbus-daemon --system --fork || true
 fi
 
-# 7. SSL
+# 6. SSL Cert
 if [ ! -f /etc/xrdp/railway.crt ]; then
     openssl req -x509 -newkey rsa:2048 -nodes \
         -keyout /etc/xrdp/railway.key \
@@ -61,7 +57,7 @@ chown xrdp:xrdp /etc/xrdp/railway.key /etc/xrdp/railway.crt
 chmod 600 /etc/xrdp/railway.key
 chmod 644 /etc/xrdp/railway.crt
 
-# 8. Config XRDP
+# 7. Config files
 sed -i \
     -e "s|^certificate=.*|certificate=/etc/xrdp/railway.crt|" \
     -e "s|^key_file=.*|key_file=/etc/xrdp/railway.key|" \
@@ -71,12 +67,12 @@ sed -i '/^ip=/d' /etc/xrdp/xrdp.ini
 sed -i '/^runtime_user=/d' /etc/xrdp/xrdp.ini
 sed -i '/^runtime_group=/d' /etc/xrdp/xrdp.ini
 
-# 9. Config sesman (FIX PATH XORG)
+# 8. Config sesman
+groupadd -f xrdp
 sed -i '/^\[Globals\]/a SessionSockdirGroup=xrdp' /etc/xrdp/sesman.ini
-sed -i '0,/SessionSockdirGroup=/{/SessionSockdirGroup=/!b};//d' /etc/xrdp/sesman.ini 2>/dev/null || true
 sed -i 's|param=Xorg|param=/usr/lib/xorg/Xorg|' /etc/xrdp/sesman.ini
 
-# 10. Session
+# 9. XFCE session
 cat > "$HOME_DIR/.xsession" <<'EOF'
 #!/bin/bash
 unset DBUS_SESSION_BUS_ADDRESS
@@ -96,7 +92,7 @@ exec startxfce4
 EOF
 chmod +x /etc/xrdp/startwm.sh
 
-# 11. Start
+# 10. Start daemons
 echo "[START] XRDP Session Manager..."
 xrdp-sesman --nodaemon >> /var/log/xrdp-sesman.log 2>&1 &
 SESMAN_PID=$!
@@ -109,6 +105,7 @@ XRDP_PID=$!
 sleep 2
 if ! kill -0 "$XRDP_PID" 2>/dev/null; then cat /var/log/xrdp.log; kill "$SESMAN_PID"; exit 1; fi
 
+# 11. Tail logs
 tail -F /var/log/xrdp.log /var/log/xrdp-sesman.log &
 TAIL_PID=$!
 
