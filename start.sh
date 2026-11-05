@@ -13,7 +13,7 @@ usermod -aG sudo "$RDP_USER"
 usermod -aG ssl-cert "$RDP_USER" 2>/dev/null || true
 adduser xrdp ssl-cert 2>/dev/null || true
 
-# 2. Setup folder & permission (Paksa 777 biar ga ada drama)
+# 2. Setup folder & permission
 HOME_DIR="$(eval echo ~"$RDP_USER")"
 mkdir -p "$HOME_DIR"
 chown "$RDP_USER:$RDP_USER" "$HOME_DIR"
@@ -42,12 +42,13 @@ mkdir -p /run/xrdp/sockdir /tmp/.X11-unix
 chown -R xrdp:xrdp /run/xrdp /tmp/.X11-unix
 chmod 777 /run/xrdp /run/xrdp/sockdir /tmp/.X11-unix
 
-# 5. DBus
-if [ ! -S /var/run/dbus/system_bus_socket ]; then
+# 5. DBus (TAMBAHIN mkdir -p /run/dbus)
+mkdir -p /run/dbus
+if [ ! -S /run/dbus/system_bus_socket ]; then
     dbus-daemon --system --fork || true
 fi
 
-# 6. SSL (Ganti default cert)
+# 6. SSL
 if [ ! -f /etc/xrdp/railway.crt ]; then
     openssl req -x509 -newkey rsa:2048 -nodes \
         -keyout /etc/xrdp/railway.key \
@@ -62,14 +63,11 @@ sed -i "s|^certificate=.*|certificate=/etc/xrdp/railway.crt|" /etc/xrdp/xrdp.ini
 sed -i "s|^key_file=.*|key_file=/etc/xrdp/railway.key|" /etc/xrdp/xrdp.ini
 sed -i "s|^port=.*|port=3389|" /etc/xrdp/xrdp.ini
 
-# 7. SESMAN CONFIG (INI KUNCIUTAMANYA)
-# Pastikan param Xorg bener & SessionSockdirGroup bener
+# 7. SESMAN CONFIG
 sed -i 's|param=Xorg|param=/usr/lib/xorg/Xorg|g' /etc/xrdp/sesman.ini
 grep -q "SessionSockdirGroup" /etc/xrdp/sesman.ini || sed -i '/^\[Globals\]/a SessionSockdirGroup=xrdp' /etc/xrdp/sesman.ini
 
-# 8. START (Pake exec biar tini ngehandle)
+# 8. START
 echo "[START] Running XRDP..."
 xrdp-sesman --nodaemon &
 xrdp --nodaemon
-
-echo "[EXIT] XRDP stopped."
