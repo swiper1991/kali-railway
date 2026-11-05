@@ -17,7 +17,7 @@ usermod -aG sudo "$RDP_USER"
 usermod -aG ssl-cert "$RDP_USER" 2>/dev/null || true
 adduser xrdp ssl-cert 2>/dev/null || true
 
-# 2. VARIABEL YANG KETINGGALAN (INI PENYEBAB CRASH)
+# 2. Home dir
 HOME_DIR="$(eval echo ~"$RDP_USER")"
 mkdir -p "$HOME_DIR"
 chown "$RDP_USER:$RDP_USER" "$HOME_DIR"
@@ -34,12 +34,23 @@ allowed_users=anybody
 needs_root_rights=no
 EOF
 
-# 5. DBus
+# 5. CEK XORGXRDP (INI PENTING)
+if ! dpkg -l | grep -q xorgxrdp; then
+    echo "[FIX] Installing xorgxrdp..."
+    apt-get update && apt-get install -y xorgxrdp
+fi
+
+if [ ! -f /usr/lib/xorg/Xorg ]; then
+    echo "[FATAL] Xorg binary not found at /usr/lib/xorg/Xorg"
+    exit 1
+fi
+
+# 6. DBus
 if [ ! -S /var/run/dbus/system_bus_socket ]; then
     dbus-daemon --system --fork || true
 fi
 
-# 6. SSL
+# 7. SSL
 if [ ! -f /etc/xrdp/railway.crt ]; then
     openssl req -x509 -newkey rsa:2048 -nodes \
         -keyout /etc/xrdp/railway.key \
@@ -50,7 +61,7 @@ chown xrdp:xrdp /etc/xrdp/railway.key /etc/xrdp/railway.crt
 chmod 600 /etc/xrdp/railway.key
 chmod 644 /etc/xrdp/railway.crt
 
-# 7. Config XRDP (HAPUS runtime_user/group & ip=)
+# 8. Config XRDP
 sed -i \
     -e "s|^certificate=.*|certificate=/etc/xrdp/railway.crt|" \
     -e "s|^key_file=.*|key_file=/etc/xrdp/railway.key|" \
@@ -60,12 +71,12 @@ sed -i '/^ip=/d' /etc/xrdp/xrdp.ini
 sed -i '/^runtime_user=/d' /etc/xrdp/xrdp.ini
 sed -i '/^runtime_group=/d' /etc/xrdp/xrdp.ini
 
-# 8. Config sesman (PAKSA SessionSockdirGroup)
+# 9. Config sesman (FIX PATH XORG)
 sed -i '/^\[Globals\]/a SessionSockdirGroup=xrdp' /etc/xrdp/sesman.ini
 sed -i '0,/SessionSockdirGroup=/{/SessionSockdirGroup=/!b};//d' /etc/xrdp/sesman.ini 2>/dev/null || true
 sed -i 's|param=Xorg|param=/usr/lib/xorg/Xorg|' /etc/xrdp/sesman.ini
 
-# 9. Session
+# 10. Session
 cat > "$HOME_DIR/.xsession" <<'EOF'
 #!/bin/bash
 unset DBUS_SESSION_BUS_ADDRESS
@@ -85,7 +96,7 @@ exec startxfce4
 EOF
 chmod +x /etc/xrdp/startwm.sh
 
-# 10. Start
+# 11. Start
 echo "[START] XRDP Session Manager..."
 xrdp-sesman --nodaemon >> /var/log/xrdp-sesman.log 2>&1 &
 SESMAN_PID=$!
