@@ -38,6 +38,8 @@ mkdir -p /var/run/xrdp/sockdir
 mkdir -p /var/log/xrdp
 mkdir -p /tmp/runtime-kali
 
+# Fix permissions so xrdp and sesman can communicate
+chown xrdp:xrdp /var/run/xrdp
 chown xrdp:xrdp /var/run/xrdp/sockdir
 chmod 755 /var/run/xrdp/sockdir
 
@@ -45,7 +47,7 @@ chown "$RDP_USER:$RDP_USER" /tmp/runtime-kali
 chmod 700 /tmp/runtime-kali
 
 # ------------------------------------------------------------
-# 3. Clean stale session files (for container restarts)
+# 3. Clean stale session files (container restart safety)
 # ------------------------------------------------------------
 rm -rf /tmp/.X11-unix/* 2>/dev/null || true
 rm -rf /tmp/.xrdp/* 2>/dev/null || true
@@ -60,14 +62,14 @@ allowed_users=anybody
 needs_root_rights=no
 EOF
 
-# Ensure xorgxrdp exists (sometimes silent failure on slim Kali)
+# Ensure xorgxrdp is installed
 if ! dpkg -l | grep -q xorgxrdp; then
     echo "[FIX] Installing xorgxrdp..."
     apt-get update && apt-get install -y xorgxrdp
 fi
 
 # ------------------------------------------------------------
-# 5. Start system DBus (safe on container)
+# 5. Start system DBus
 # ------------------------------------------------------------
 if [ ! -S /var/run/dbus/system_bus_socket ]; then
     echo "[DBUS] Starting system bus..."
@@ -92,7 +94,7 @@ chmod 600 /etc/xrdp/railway.key
 chmod 644 /etc/xrdp/railway.crt
 
 # ------------------------------------------------------------
-# 7. Configure XRDP
+# 7. Configure XRDP (fix no ip set)
 # ------------------------------------------------------------
 sed -i \
     -e "s|^certificate=.*|certificate=/etc/xrdp/railway.crt|" \
@@ -100,28 +102,38 @@ sed -i \
     -e "s|^port=.*|port=$RDP_PORT|" \
     /etc/xrdp/xrdp.ini
 
+# Remove old 'ip=' line if exists (xrdp 0.10+ doesn't need it)
+sed -i '/^ip=/d' /etc/xrdp/xrdp.ini
+
 # ------------------------------------------------------------
-# 8. Xauthority
+# 8. Configure sesman (fix session socket)
+# ------------------------------------------------------------
+if ! grep -q "SessionSockdirGroup" /etc/xrdp/sesman.ini; then
+    sed -i '/^\[Globals\]/a SessionSockdirGroup=xrdp' /etc/xrdp/sesman.ini
+fi
+
+# ------------------------------------------------------------
+# 9. Xauthority
 # ------------------------------------------------------------
 touch "$HOME_DIR/.Xauthority"
 chown "$RDP_USER:$RDP_USER" "$HOME_DIR/.Xauthority"
 chmod 600 "$HOME_DIR/.Xauthority"
 
 # ------------------------------------------------------------
-# 9. XFCE session for user
+# 10. XFCE session for user
 # ------------------------------------------------------------
 cat > "$HOME_DIR/.xsession" <<'EOF'
 #!/bin/bash
 unset DBUS_SESSION_BUS_ADDRESS
 unset XDG_RUNTIME_DIR
-exec dbus-run-session -- startxfce4
+exec startxfce4
 EOF
 
 chmod +x "$HOME_DIR/.xsession"
 chown "$RDP_USER:$RDP_USER" "$HOME_DIR/.xsession"
 
 # ------------------------------------------------------------
-# 10. XRDP window manager starter (direct to XFCE)
+# 11. XRDP window manager starter
 # ------------------------------------------------------------
 cat > /etc/xrdp/startwm.sh <<'EOF'
 #!/bin/sh
@@ -135,7 +147,7 @@ EOF
 chmod +x /etc/xrdp/startwm.sh
 
 # ------------------------------------------------------------
-# 11. Debug info
+# 12. Debug info
 # ------------------------------------------------------------
 echo "[CHECK] dbus-daemon : $(command -v dbus-daemon || echo MISSING)"
 echo "[CHECK] xrdp        : $(command -v xrdp || echo MISSING)"
@@ -144,7 +156,7 @@ echo "[CHECK] startxfce4  : $(command -v startxfce4 || echo MISSING)"
 echo "[CHECK] Xorg        : $(command -v Xorg || echo MISSING)"
 
 # ------------------------------------------------------------
-# 12. Start XRDP session manager
+# 13. Start XRDP session manager
 # ------------------------------------------------------------
 echo "[START] XRDP Session Manager..."
 xrdp-sesman --nodaemon >> /var/log/xrdp-sesman.log 2>&1 &
@@ -160,7 +172,7 @@ fi
 echo "[OK] xrdp-sesman running (PID $SESMAN_PID)"
 
 # ------------------------------------------------------------
-# 13. Start XRDP server
+# 14. Start XRDP server
 # ------------------------------------------------------------
 echo "[START] XRDP Server on port $RDP_PORT..."
 xrdp --nodaemon >> /var/log/xrdp.log 2>&1 &
@@ -177,7 +189,7 @@ fi
 echo "[OK] xrdp running (PID $XRDP_PID)"
 
 # ------------------------------------------------------------
-# 14. Tail logs + cleanup handler
+# 15. Tail logs + cleanup handler
 # ------------------------------------------------------------
 tail -F /var/log/xrdp.log /var/log/xrdp-sesman.log &
 TAIL_PID=$!
