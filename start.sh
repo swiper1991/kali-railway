@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 # ============================================================
-# Railway-compatible XRDP bootstrap
+# Railway-compatible XRDP bootstrap for Kali Linux
 # ============================================================
 
 RDP_USER="${RDP_USER:-kali}"
@@ -22,6 +22,8 @@ fi
 
 echo "$RDP_USER:$RDP_PASSWORD" | chpasswd
 usermod -aG sudo "$RDP_USER"
+usermod -aG ssl-cert "$RDP_USER" 2>/dev/null || true
+adduser xrdp ssl-cert 2>/dev/null || true
 
 HOME_DIR="$(eval echo ~"$RDP_USER")"
 mkdir -p "$HOME_DIR"
@@ -32,14 +34,40 @@ chown "$RDP_USER:$RDP_USER" "$HOME_DIR"
 # ------------------------------------------------------------
 mkdir -p /var/run/dbus
 mkdir -p /var/run/xrdp
+mkdir -p /var/run/xrdp/sockdir
 mkdir -p /var/log/xrdp
 mkdir -p /tmp/runtime-kali
+
+chown xrdp:xrdp /var/run/xrdp/sockdir
+chmod 755 /var/run/xrdp/sockdir
 
 chown "$RDP_USER:$RDP_USER" /tmp/runtime-kali
 chmod 700 /tmp/runtime-kali
 
 # ------------------------------------------------------------
-# 3. Start system DBus (safe on container)
+# 3. Clean stale session files (for container restarts)
+# ------------------------------------------------------------
+rm -rf /tmp/.X11-unix/* 2>/dev/null || true
+rm -rf /tmp/.xrdp/* 2>/dev/null || true
+
+# ------------------------------------------------------------
+# 4. Fix Xorg for container environment
+# ------------------------------------------------------------
+echo "[FIX] Configuring Xorg for container..."
+
+cat > /etc/X11/Xwrapper.config <<EOF
+allowed_users=anybody
+needs_root_rights=no
+EOF
+
+# Ensure xorgxrdp exists (sometimes silent failure on slim Kali)
+if ! dpkg -l | grep -q xorgxrdp; then
+    echo "[FIX] Installing xorgxrdp..."
+    apt-get update && apt-get install -y xorgxrdp
+fi
+
+# ------------------------------------------------------------
+# 5. Start system DBus (safe on container)
 # ------------------------------------------------------------
 if [ ! -S /var/run/dbus/system_bus_socket ]; then
     echo "[DBUS] Starting system bus..."
@@ -47,7 +75,7 @@ if [ ! -S /var/run/dbus/system_bus_socket ]; then
 fi
 
 # ------------------------------------------------------------
-# 4. Generate XRDP SSL certificate
+# 6. Generate XRDP SSL certificate
 # ------------------------------------------------------------
 echo "[SSL] Generating XRDP certificate..."
 if [ ! -f /etc/xrdp/railway.crt ] || [ ! -f /etc/xrdp/railway.key ]; then
@@ -64,7 +92,7 @@ chmod 600 /etc/xrdp/railway.key
 chmod 644 /etc/xrdp/railway.crt
 
 # ------------------------------------------------------------
-# 5. Configure XRDP
+# 7. Configure XRDP
 # ------------------------------------------------------------
 sed -i \
     -e "s|^certificate=.*|certificate=/etc/xrdp/railway.crt|" \
@@ -73,14 +101,14 @@ sed -i \
     /etc/xrdp/xrdp.ini
 
 # ------------------------------------------------------------
-# 6. Xauthority
+# 8. Xauthority
 # ------------------------------------------------------------
 touch "$HOME_DIR/.Xauthority"
 chown "$RDP_USER:$RDP_USER" "$HOME_DIR/.Xauthority"
 chmod 600 "$HOME_DIR/.Xauthority"
 
 # ------------------------------------------------------------
-# 7. XFCE session for user
+# 9. XFCE session for user
 # ------------------------------------------------------------
 cat > "$HOME_DIR/.xsession" <<'EOF'
 #!/bin/bash
@@ -93,31 +121,30 @@ chmod +x "$HOME_DIR/.xsession"
 chown "$RDP_USER:$RDP_USER" "$HOME_DIR/.xsession"
 
 # ------------------------------------------------------------
-# 8. XRDP window manager starter
+# 10. XRDP window manager starter (direct to XFCE)
 # ------------------------------------------------------------
 cat > /etc/xrdp/startwm.sh <<'EOF'
 #!/bin/sh
 unset DBUS_SESSION_BUS_ADDRESS
 unset XDG_RUNTIME_DIR
-if [ -r /etc/default/locale ]; then
-    . /etc/default/locale
-    export LANG LANGUAGE
-fi
-exec /etc/X11/Xsession
+if [ -r /etc/profile ]; then . /etc/profile; fi
+if [ -r ~/.profile ]; then . ~/.profile; fi
+exec startxfce4
 EOF
 
 chmod +x /etc/xrdp/startwm.sh
 
 # ------------------------------------------------------------
-# 9. Debug info
+# 11. Debug info
 # ------------------------------------------------------------
 echo "[CHECK] dbus-daemon : $(command -v dbus-daemon || echo MISSING)"
 echo "[CHECK] xrdp        : $(command -v xrdp || echo MISSING)"
 echo "[CHECK] xrdp-sesman : $(command -v xrdp-sesman || echo MISSING)"
 echo "[CHECK] startxfce4  : $(command -v startxfce4 || echo MISSING)"
+echo "[CHECK] Xorg        : $(command -v Xorg || echo MISSING)"
 
 # ------------------------------------------------------------
-# 10. Start XRDP session manager
+# 12. Start XRDP session manager
 # ------------------------------------------------------------
 echo "[START] XRDP Session Manager..."
 xrdp-sesman --nodaemon >> /var/log/xrdp-sesman.log 2>&1 &
@@ -133,7 +160,7 @@ fi
 echo "[OK] xrdp-sesman running (PID $SESMAN_PID)"
 
 # ------------------------------------------------------------
-# 11. Start XRDP server
+# 13. Start XRDP server
 # ------------------------------------------------------------
 echo "[START] XRDP Server on port $RDP_PORT..."
 xrdp --nodaemon >> /var/log/xrdp.log 2>&1 &
@@ -150,7 +177,7 @@ fi
 echo "[OK] xrdp running (PID $XRDP_PID)"
 
 # ------------------------------------------------------------
-# 12. Tail logs + cleanup handler
+# 14. Tail logs + cleanup handler
 # ------------------------------------------------------------
 tail -F /var/log/xrdp.log /var/log/xrdp-sesman.log &
 TAIL_PID=$!
