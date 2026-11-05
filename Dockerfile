@@ -10,8 +10,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xfce4-goodies \
     xrdp \
     xorgxrdp \
+    xorg \
+    xserver-xorg \
     xserver-xorg-core \
     xserver-xorg-legacy \
+    xinit \
+    x11-xserver-utils \
     dbus \
     dbus-x11 \
     xauth \
@@ -26,6 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iproute2 \
     net-tools \
     tini \
+    ssl-cert \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
