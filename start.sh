@@ -38,7 +38,7 @@ mkdir -p /var/run/xrdp/sockdir
 mkdir -p /var/log/xrdp
 mkdir -p /tmp/runtime-kali
 
-# Fix permissions so xrdp and sesman can communicate
+# FIX KRUSIAL: Pastikan permission socket bener
 chown xrdp:xrdp /var/run/xrdp
 chown xrdp:xrdp /var/run/xrdp/sockdir
 chmod 755 /var/run/xrdp/sockdir
@@ -47,7 +47,7 @@ chown "$RDP_USER:$RDP_USER" /tmp/runtime-kali
 chmod 700 /tmp/runtime-kali
 
 # ------------------------------------------------------------
-# 3. Clean stale session files (container restart safety)
+# 3. Clean stale session files
 # ------------------------------------------------------------
 rm -rf /tmp/.X11-unix/* 2>/dev/null || true
 rm -rf /tmp/.xrdp/* 2>/dev/null || true
@@ -62,7 +62,6 @@ allowed_users=anybody
 needs_root_rights=no
 EOF
 
-# Ensure xorgxrdp is installed
 if ! dpkg -l | grep -q xorgxrdp; then
     echo "[FIX] Installing xorgxrdp..."
     apt-get update && apt-get install -y xorgxrdp
@@ -94,7 +93,7 @@ chmod 600 /etc/xrdp/railway.key
 chmod 644 /etc/xrdp/railway.crt
 
 # ------------------------------------------------------------
-# 7. Configure XRDP (fix no ip set)
+# 7. Configure XRDP (HAPUS ip= biar gak error)
 # ------------------------------------------------------------
 sed -i \
     -e "s|^certificate=.*|certificate=/etc/xrdp/railway.crt|" \
@@ -102,12 +101,13 @@ sed -i \
     -e "s|^port=.*|port=$RDP_PORT|" \
     /etc/xrdp/xrdp.ini
 
-# Remove old 'ip=' line if exists (xrdp 0.10+ doesn't need it)
+# Hapus baris 'ip=' yang bikin error
 sed -i '/^ip=/d' /etc/xrdp/xrdp.ini
 
 # ------------------------------------------------------------
-# 8. Configure sesman (fix session socket)
+# 8. Configure sesman (INI YANG BIKIN XORG GAGAL START)
 # ------------------------------------------------------------
+# Tambahin SessionSockdirGroup=xrdp di [Globals]
 if ! grep -q "SessionSockdirGroup" /etc/xrdp/sesman.ini; then
     sed -i '/^\[Globals\]/a SessionSockdirGroup=xrdp' /etc/xrdp/sesman.ini
 fi
