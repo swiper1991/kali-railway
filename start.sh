@@ -17,24 +17,29 @@ usermod -aG sudo "$RDP_USER"
 usermod -aG ssl-cert "$RDP_USER" 2>/dev/null || true
 adduser xrdp ssl-cert 2>/dev/null || true
 
-# 2. Prepare dirs
+# 2. VARIABEL YANG KETINGGALAN (INI PENYEBAB CRASH)
+HOME_DIR="$(eval echo ~"$RDP_USER")"
+mkdir -p "$HOME_DIR"
+chown "$RDP_USER:$RDP_USER" "$HOME_DIR"
+
+# 3. Prepare dirs
 rm -rf /var/run/xrdp /run/xrdp /tmp/.X11-unix /tmp/.xrdp 2>/dev/null || true
 mkdir -p /var/run/dbus /var/run/xrdp/sockdir /var/log/xrdp /tmp/runtime-kali
 chown -R xrdp:xrdp /var/run/xrdp
 chmod 777 /var/run/xrdp /var/run/xrdp/sockdir
 
-# 3. Fix Xorg
+# 4. Fix Xorg
 cat > /etc/X11/Xwrapper.config <<EOF
 allowed_users=anybody
 needs_root_rights=no
 EOF
 
-# 4. DBus
+# 5. DBus
 if [ ! -S /var/run/dbus/system_bus_socket ]; then
     dbus-daemon --system --fork || true
 fi
 
-# 5. SSL
+# 6. SSL
 if [ ! -f /etc/xrdp/railway.crt ]; then
     openssl req -x509 -newkey rsa:2048 -nodes \
         -keyout /etc/xrdp/railway.key \
@@ -45,7 +50,7 @@ chown xrdp:xrdp /etc/xrdp/railway.key /etc/xrdp/railway.crt
 chmod 600 /etc/xrdp/railway.key
 chmod 644 /etc/xrdp/railway.crt
 
-# 6. Config XRDP (HAPUS runtime_user/group & ip=)
+# 7. Config XRDP (HAPUS runtime_user/group & ip=)
 sed -i \
     -e "s|^certificate=.*|certificate=/etc/xrdp/railway.crt|" \
     -e "s|^key_file=.*|key_file=/etc/xrdp/railway.key|" \
@@ -55,14 +60,12 @@ sed -i '/^ip=/d' /etc/xrdp/xrdp.ini
 sed -i '/^runtime_user=/d' /etc/xrdp/xrdp.ini
 sed -i '/^runtime_group=/d' /etc/xrdp/xrdp.ini
 
-# 7. Config sesman (PAKSA SessionSockdirGroup)
+# 8. Config sesman (PAKSA SessionSockdirGroup)
 sed -i '/^\[Globals\]/a SessionSockdirGroup=xrdp' /etc/xrdp/sesman.ini
-# Hapus duplikat kalo ada
 sed -i '0,/SessionSockdirGroup=/{/SessionSockdirGroup=/!b};//d' /etc/xrdp/sesman.ini 2>/dev/null || true
-# Fix path Xorg
 sed -i 's|param=Xorg|param=/usr/lib/xorg/Xorg|' /etc/xrdp/sesman.ini
 
-# 8. Session
+# 9. Session
 cat > "$HOME_DIR/.xsession" <<'EOF'
 #!/bin/bash
 unset DBUS_SESSION_BUS_ADDRESS
@@ -82,7 +85,7 @@ exec startxfce4
 EOF
 chmod +x /etc/xrdp/startwm.sh
 
-# 9. Start
+# 10. Start
 echo "[START] XRDP Session Manager..."
 xrdp-sesman --nodaemon >> /var/log/xrdp-sesman.log 2>&1 &
 SESMAN_PID=$!
