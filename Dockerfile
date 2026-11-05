@@ -1,4 +1,3 @@
-
 FROM kalilinux/kali-rolling
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -26,8 +25,9 @@ RUN apt-get update && apt-get install -y \
 
 COPY start.sh /start.sh
 
-RUN chmod +x /start.sh
+RUN sed -i 's/\r$//' /start.sh \
+    && chmod +x /start.sh
 
 EXPOSE 3389
 
-CMD ["/start.sh"]
+CMD ["/bin/bash", "/start.sh"]
