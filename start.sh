@@ -5,9 +5,7 @@ set -e
 RDP_USER="${RDP_USER:-kali}"
 RDP_PASSWORD="${RDP_PASSWORD:?RDP_PASSWORD belum diatur}"
 
-if ! id "$RDP_USER" >/dev/null 2>&1; then
-    useradd -m -s /bin/bash "$RDP_USER"
-fi
+useradd -m -s /bin/bash "$RDP_USER" 2>/dev/null || true
 
 echo "$RDP_USER:$RDP_PASSWORD" | chpasswd
 usermod -aG sudo "$RDP_USER"
@@ -22,21 +20,18 @@ EOF
 chmod +x "/home/$RDP_USER/.xsession"
 chown "$RDP_USER:$RDP_USER" "/home/$RDP_USER/.xsession"
 
-mkdir -p /var/run/dbus
-dbus-daemon --system --fork || true
+mkdir -p /var/run/dbus /var/run/xrdp /var/log/xrdp
 
-echo "[START] Starting XRDP Session Manager..."
+echo "[CHECK] dbus-daemon: $(command -v dbus-daemon)"
+echo "[CHECK] xrdp: $(command -v xrdp)"
+echo "[CHECK] xrdp-sesman: $(command -v xrdp-sesman)"
 
-/usr/sbin/xrdp-sesman --nodaemon &
-SESMAN_PID=$!
+dbus-daemon --system --fork
+
+echo "[START] XRDP Session Manager"
+xrdp-sesman --nodaemon &
 
 sleep 2
 
-if ! kill -0 "$SESMAN_PID" 2>/dev/null; then
-    echo "[ERROR] XRDP Session Manager failed!"
-    exit 1
-fi
-
-echo "[START] Starting XRDP Server..."
-
-exec /usr/sbin/xrdp --nodaemon
+echo "[START] XRDP Server"
+exec xrdp --nodaemon
