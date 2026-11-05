@@ -1,36 +1,33 @@
-#!/bin/bash
-set -e
+FROM kalilinux/kali-rolling
 
-RDP_USER="${RDP_USER:-kali}"
-RDP_PASSWORD="${RDP_PASSWORD:?RDP_PASSWORD belum diatur}"
+ENV DEBIAN_FRONTEND=noninteractive
+ENV RDP_USER=kali
 
-useradd -m -s /bin/bash "$RDP_USER" 2>/dev/null || true
+RUN apt-get update && apt-get install -y \
+    xfce4 \
+    xfce4-terminal \
+    xrdp \
+    xorgxrdp \
+    xserver-xorg-core \
+    dbus \
+    dbus-x11 \
+    xauth \
+    sudo \
+    nano \
+    curl \
+    wget \
+    git \
+    firefox-esr \
+    procps \
+    iproute2 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-echo "$RDP_USER:$RDP_PASSWORD" | chpasswd
-usermod -aG sudo "$RDP_USER"
+COPY start.sh /start.sh
 
-mkdir -p "/home/$RDP_USER"
+RUN sed -i 's/\r$//' /start.sh \
+    && chmod +x /start.sh
 
-cat > "/home/$RDP_USER/.xsession" <<'EOF'
-#!/bin/bash
-exec dbus-run-session -- startxfce4
-EOF
+EXPOSE 3389
 
-chmod +x "/home/$RDP_USER/.xsession"
-chown "$RDP_USER:$RDP_USER" "/home/$RDP_USER/.xsession"
-
-mkdir -p /var/run/dbus /var/run/xrdp /var/log/xrdp
-
-echo "[CHECK] dbus-daemon: $(command -v dbus-daemon)"
-echo "[CHECK] xrdp: $(command -v xrdp)"
-echo "[CHECK] xrdp-sesman: $(command -v xrdp-sesman)"
-
-dbus-daemon --system --fork
-
-echo "[START] XRDP Session Manager"
-xrdp-sesman --nodaemon &
-
-sleep 2
-
-echo "[START] XRDP Server"
-exec xrdp --nodaemon
+CMD ["/bin/bash", "/start.sh"]
