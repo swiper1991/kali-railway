@@ -1,6 +1,7 @@
 FROM kalilinux/kali-rolling
 
 ENV DEBIAN_FRONTEND=noninteractive
+ENV RDP_USER=kali
 
 RUN apt-get update && apt-get install -y \
     xfce4 \
@@ -11,15 +12,15 @@ RUN apt-get update && apt-get install -y \
     dbus \
     dbus-x11 \
     xauth \
+    openssl \
     sudo \
     nano \
     curl \
     wget \
     git \
     firefox-esr \
-    && command -v dbus-daemon \
-    && command -v xrdp \
-    && command -v xrdp-sesman \
+    procps \
+    iproute2 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
